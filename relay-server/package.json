@@ -1,0 +1,12 @@
+{
+  "name": "bird-relay-server",
+  "version": "1.0.0",
+  "description": "WebSocket relay server for Bird Companion desktop pet",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.0.0"
+  }
+}
