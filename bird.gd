@@ -12,7 +12,7 @@ var _todo_panel: Control    # Todo 面板（CanvasLayer 内，主窗口中）
 var _todo_btn:   Button
 
 # ── 中转服务器配置 ────────────────────────────────────────
-const WS_URL := "ws://106.53.29.28:18790"
+const WS_URL := "ws://106.53.29.28:18789"
 
 var _ws := WebSocketPeer.new()
 var _reconnect_delay := 5.0
@@ -42,6 +42,9 @@ var _state := State.IDLE
 var _drag_start : Vector2i
 var _is_dragging := false
 
+# ── 全局活动检测（鼠标移动 = 用户还在活动）──────────────────
+var _last_mouse_pos := Vector2i.ZERO
+
 
 func _ready() -> void:
 	anim_tree.active = true
@@ -49,16 +52,11 @@ func _ready() -> void:
 	_next_tilt = randf_range(5.0, 15.0)
 
 	# ── 全屏透明窗口（Bongocat 模式）──────────────────────
-	var screen_sz := DisplayServer.screen_get_size()
-	get_window().size     = screen_sz
-	get_window().position = Vector2i.ZERO
-	# 在 resize 之后设置透明（resize 可能重置渲染状态）
+	# 先设透明和清除色，再 resize（避免 resize 重置渲染状态）
 	get_window().transparent_bg = true
-	# 强制清除色为完全透明（兜底保证全屏背景透明）
 	RenderingServer.set_default_clear_color(Color(0.0, 0.0, 0.0, 0.0))
-	# 鸟鸟定位在屏幕右下角（距边缘留一些空间）
-	position = Vector2(screen_sz.x - 200.0, screen_sz.y - 280.0)
-
+	# 延迟一帧再做 resize + 定位，确保渲染器初始化完成
+	call_deferred("_setup_fullscreen_window")
 
 	# ── 调试标签（显示倒计时）─────────────────────────────
 	_debug_label = Label.new()
@@ -71,6 +69,30 @@ func _ready() -> void:
 	_update_status()
 	_connect_ws()
 	call_deferred("_init_todo")
+
+
+func _setup_fullscreen_window() -> void:
+	var win := get_window()
+	var screen_idx  := win.current_screen
+	var screen_rect := DisplayServer.screen_get_usable_rect(screen_idx)
+
+	# 必须先禁用内容缩放，视口才能跟随窗口大小变化
+	win.content_scale_mode   = Window.CONTENT_SCALE_MODE_DISABLED
+	win.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_IGNORE
+
+	win.position      = screen_rect.position
+	win.size          = screen_rect.size
+	win.always_on_top = true
+
+	# 等两帧，确保 resize 和缩放模式都生效
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	var vp_sz := get_viewport_rect().size
+	print("[Window] screen_rect=", screen_rect, "  viewport=", vp_sz)
+	position = Vector2(vp_sz.x - 200.0, vp_sz.y - 280.0)
+	_reposition_todo_ui()
+	_update_mouse_region()
 
 
 # ── Todo 初始化 ─────────────────────────────────────────
@@ -195,6 +217,14 @@ func _process(delta: float) -> void:
 			_reconnect_delay  = min(_reconnect_delay * 2, 60.0)
 			_connect_ws()
 
+	# ── 全局活动检测：鼠标只要移动就重置入睡计时 ────────────
+	var cur_mouse := DisplayServer.mouse_get_position()
+	if cur_mouse != _last_mouse_pos:
+		_last_mouse_pos = cur_mouse
+		_idle_timer = 0.0
+		if _state == State.SLEEPING:
+			_wake_up()
+
 	# ── 休眠计时（工作中不计入）────────────────────────────
 	if _state != State.SLEEPING and _state != State.WORKING:
 		_idle_timer += delta
@@ -236,45 +266,79 @@ func _connect_ws() -> void:
 func _on_ws_message(raw: String) -> void:
 	var msg = JSON.parse_string(raw)
 	if msg == null:
+		print("[WS] 无法解析 JSON")
 		return
 
 	var msg_type: String = msg.get("type", "")
+	print("[WS] event=", msg.get("event", msg_type))
 
-	# 中转服务器欢迎包
+	# ── 收到 challenge，发送认证请求 ──────────────────────
+	if msg_type == "event" and msg.get("event", "") == "connect.challenge":
+		var nonce = msg.get("payload", {}).get("nonce", "")
+		print("[WS] 收到 challenge nonce=", nonce, "，发送认证...")
+		var auth_req := {
+			"type": "req",
+			"id": "bird-companion-001",
+			"method": "connect",
+			"params": {
+				"minProtocol": 3,
+				"maxProtocol": 3,
+				"client": { "id": "cli", "version": "2026.3.2", "platform": "windows", "mode": "cli" },
+				"role": "operator",
+				"scopes": ["operator.read", "operator.write"],
+				"auth": { "token": "lobster123" }
+			}
+		}
+		_ws.send_text(JSON.stringify(auth_req))
+		return
+
+	# ── 收到认证响应 ──────────────────────────────────────
+	if msg_type == "res":
+		if msg.get("ok", false):
+			print("[WS] 认证成功！")
+			_reconnect_delay = 5.0
+			_update_status()
+		else:
+			print("[WS] 认证失败：", msg)
+		return
+
+	# ── 中转服务器兼容（欢迎包）──────────────────────────
 	if msg_type == "welcome":
-		print("[WS] 已连接到中转服务器")
+		print("[WS] 已连接到中转服务器（旧模式）")
 		_reconnect_delay = 5.0
 		_update_status()
 		return
 
-	# 事件消息
-	if msg_type == "event" and msg.get("event", "") == "agent":
+	# ── 事件消息 ──────────────────────────────────────────
+	if msg_type == "event":
+		var evt: String = msg.get("event", "")
 		var payload = msg.get("payload", {})
-		# 任何事件到来都重置休眠计时
-		_idle_timer = 0.0
-		match payload.get("stream", ""):
-			"lifecycle":
-				var phase = payload.get("data", {}).get("phase", "")
-				match phase:
-					"start":
-						print("[Pet] AI 开始工作 → working")
-						_wake_up_if_sleeping()
-						_set_state(State.WORKING)
-					"end":
-						print("[Pet] AI 完成工作 → done")
-						_set_state(State.DONE)
-						await get_tree().create_timer(3.0).timeout
-						_set_state(State.IDLE)
-			"sedentary":
-				print("[Pet] 久坐提醒（服务器推送）")
-				_sedentary_timer = 0.0
-				_trigger_side_animation()
-			"sleep":
-				print("[Pet] 收到下班指令 → 休眠")
-				_set_state(State.SLEEPING)
-			"wake":
-				print("[Pet] 收到唤醒指令")
-				_wake_up()
+		_idle_timer = 0.0  # 任何事件都重置休眠计时
+
+		if evt == "agent":
+			match payload.get("stream", ""):
+				"lifecycle":
+					var phase = payload.get("data", {}).get("phase", "")
+					match phase:
+						"start":
+							print("[Pet] AI 开始工作 → working")
+							_wake_up_if_sleeping()
+							_set_state(State.WORKING)
+						"end":
+							print("[Pet] AI 完成工作 → done")
+							_set_state(State.DONE)
+							await get_tree().create_timer(3.0).timeout
+							_set_state(State.IDLE)
+				"sedentary":
+					print("[Pet] 久坐提醒")
+					_sedentary_timer = 0.0
+					_trigger_side_animation()
+				"sleep":
+					print("[Pet] 收到下班指令 → 休眠")
+					_set_state(State.SLEEPING)
+				"wake":
+					print("[Pet] 收到唤醒指令")
+					_wake_up()
 
 
 # ── 切换宠物状态 ──────────────────────────────────────────
@@ -368,7 +432,7 @@ func _trigger_side_animation() -> void:
 
 
 # ── 点击 / 拖拽（左键）───────────────────────────────────
-func _input(event: InputEvent) -> void:
+func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.pressed:
 			_idle_timer  = 0.0  # 点击重置入睡计时
