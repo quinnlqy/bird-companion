@@ -989,10 +989,10 @@ anim_player = NodePath("../AnimationPlayer")
 parameters/conditions/do_tilting = false
 
 [node name="StatusLabel" type="Label" parent="." unique_id=111111111]
-offset_left = -60.0
-offset_top = -175.0
+offset_left = -80.0
+offset_top = 50.0
 offset_right = 180.0
-offset_bottom = -145.0
+offset_bottom = 80.0
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_colors/font_shadow_color = Color(0, 0, 0, 1)
 theme_override_constants/shadow_offset_x = 1
