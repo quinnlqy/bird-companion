@@ -31,7 +31,7 @@ var _next_tilt  := 0.0
 var _is_side_animating := false
 
 # ── 久坐提醒计时器 ────────────────────────────────────────
-const SEDENTARY_INTERVAL := 0.15 * 60.0  # DEBUG: 9秒（テスト用）
+const SEDENTARY_INTERVAL := 45.0 * 60.0  # 45 分钟（秒）
 var _sedentary_timer := 0.0
 
 # ── 休眠计时器 ───────────────────────────────────────────
@@ -534,21 +534,15 @@ func _trigger_side_animation() -> void:
 
 	# 2. 播放 turnleft
 	animated_sprite.play("turnleft")
-	print("[Pet] 播放 turnleft，等待完成...")
 	await animated_sprite.animation_finished
-	print("[Pet] turnleft 完成")
 
 	# 3. 播放 furry（播完整一遍后继续）
 	animated_sprite.play("furry")
-	print("[Pet] 播放 furry，等待完成...")
 	await animated_sprite.animation_finished
-	print("[Pet] furry 完成")
 
 	# 4. 从最后一帧倒放 turnleft，接回正面姿势
 	animated_sprite.play("turnleft", -1.0, true)
-	print("[Pet] 倒放 turnleft，等待完成...")
 	await animated_sprite.animation_finished
-	print("[Pet] 倒放完成")
 
 	# 5. 恢复骨骼动画
 	animated_sprite.visible = false
