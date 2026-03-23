@@ -499,19 +499,25 @@ func _update_status() -> void:
 # ── 防止 StatusLabel 超出视口边缘 ──────────────────────────
 func _clamp_status_label() -> void:
 	var vp: Vector2 = get_viewport_rect().size
-	const W: float = 240.0  # label 宽度
+	const W: float = 240.0
 	const MARGIN: float = 4.0
 
-	# label 在视口中的 y = bird.position.y + label_local_y
-	# 要保证 label 顶部 >= MARGIN，即 label_local_y >= MARGIN - position.y
-	var min_ly: float = MARGIN - position.y
-	var ly: float = max(-160.0, min_ly)
+	# 期望的标签顶部 y（视口坐标）= 鸟的 y + (-160)，但不能小于 MARGIN
+	var desired_ly: float = -160.0
+	var screen_top: float = position.y + desired_ly
+	if screen_top < MARGIN:
+		desired_ly = desired_ly + (MARGIN - screen_top)
 
-	# label 在视口中的 x = bird.position.x + label_local_x
-	# 宽 240，默认居中在鸟身上：label_local_x = -120
-	var lx: float = clamp(-120.0, MARGIN - position.x, vp.x - MARGIN - W - position.x)
+	# 期望的标签左侧 x（视口坐标）= 鸟的 x + (-120)，约束在 [MARGIN, vp.x-MARGIN-W]
+	var desired_lx: float = -120.0
+	var screen_left: float = position.x + desired_lx
+	if screen_left < MARGIN:
+		desired_lx = desired_lx + (MARGIN - screen_left)
+	elif screen_left + W > vp.x - MARGIN:
+		desired_lx = desired_lx + (vp.x - MARGIN - W - screen_left)
 
-	status_label.position = Vector2(lx, ly)
+	# 每帧都写，确保退出边缘后能恢复默认位置
+	status_label.position = Vector2(desired_lx, desired_ly)
 
 
 # ── 唤醒 ─────────────────────────────────────────────────
