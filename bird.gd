@@ -499,15 +499,15 @@ func _clamp_status_label() -> void:
 	var vp_width  := get_viewport_rect().size.x
 	# 标签在 Node2D 坐标系下，global_position 是鸟的世界坐标
 	# status_label 的 offset_top = -160，即在鸟头上方 160px
-	var label_top    := position.y + status_label.offset_top
-	var label_left   := position.x + status_label.offset_left
-	var label_bottom := position.y + status_label.offset_bottom
-	var label_right  := position.x + status_label.offset_right
+	var label_top:    float = position.y + status_label.offset_top
+	var label_left:   float = position.x + status_label.offset_left
+	var label_bottom: float = position.y + status_label.offset_bottom
+	var label_right:  float = position.x + status_label.offset_right
 
 	# 如果超出顶部，把 label 整体下移，紧贴视口顶边
-	var shift_y := max(0.0, -label_top)
-	var shift_x := max(0.0, -label_left)  # 超出左边
-	shift_x      = max(shift_x, -(vp_width - label_right))  # 超出右边（负方向）
+	var shift_y: float = max(0.0, -label_top)
+	var shift_x: float = max(0.0, -label_left)  # 超出左边
+	shift_x = max(shift_x, -(vp_width - label_right))  # 超出右边（负方向）
 	# 只移 label 本身（通过 position offset），不移鸟
 	status_label.position = Vector2(shift_x, shift_y)
 
