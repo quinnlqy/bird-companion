@@ -7,7 +7,10 @@ const PRIORITY_HIGH   := "high"
 const PRIORITY_MEDIUM := "medium"
 const PRIORITY_LOW    := "low"
 
+const DONE_KEEP_SECONDS := 24.0 * 3600.0  # 完成后保留 24 小时
+
 var _todos: Array = []
+var _done_collapsed := true  # 已完成区域默认折叠
 var _list_container: VBoxContainer
 var _input: LineEdit
 var _sync_btn: Button
@@ -44,6 +47,19 @@ func _process(delta: float) -> void:
 	if _sync_timer >= SYNC_INTERVAL:
 		_sync_timer = 0.0
 		request_sync_from_openclaw()
+	# 自动清理超过 24 小时的已完成条目
+	var now := Time.get_unix_time_from_system()
+	var changed := false
+	for i in range(_todos.size() - 1, -1, -1):
+		var item: Dictionary = _todos[i]
+		if item.get("done", false):
+			var done_at: float = item.get("updated_at", 0.0)
+			if now - done_at > DONE_KEEP_SECONDS:
+				_todos.remove_at(i)
+				changed = true
+	if changed:
+		_save_todos()
+		_refresh_list()
 
 
 func _build_ui() -> void:
@@ -149,9 +165,13 @@ func _refresh_list() -> void:
 		PRIORITY_LOW:    {"label": "🟢 随时", "items": []},
 	}
 	var order := [PRIORITY_HIGH, PRIORITY_MEDIUM, PRIORITY_LOW]
+	var done_items: Array = []
 
 	for i in _todos.size():
 		var item: Dictionary = _todos[i]
+		if item.get("done", false):
+			done_items.append({"idx": i, "item": item})
+			continue
 		var p: String = item.get("priority", PRIORITY_MEDIUM)
 		if not groups.has(p): p = PRIORITY_MEDIUM
 		groups[p]["items"].append({"idx": i, "item": item})
@@ -159,15 +179,31 @@ func _refresh_list() -> void:
 	for p in order:
 		var g = groups[p]
 		if g["items"].is_empty(): continue
-
 		var header := Label.new()
 		header.text = g["label"]
 		header.add_theme_font_size_override("font_size", 11)
 		header.modulate = Color(1,1,1,0.55)
 		_list_container.add_child(header)
-
 		for entry in g["items"]:
 			_list_container.add_child(_build_item_row(entry["idx"], entry["item"]))
+
+	# ── 已完成折叠区 ──────────────────────────────────────
+	if not done_items.is_empty():
+		var done_toggle := Button.new()
+		done_toggle.flat = true
+		done_toggle.add_theme_font_size_override("font_size", 11)
+		done_toggle.modulate = Color(1,1,1,0.55)
+		var arrow := "▶ " if _done_collapsed else "▼ "
+		done_toggle.text = arrow + "✅ 已完成（%d）" % done_items.size()
+		done_toggle.pressed.connect(func():
+			_done_collapsed = not _done_collapsed
+			_refresh_list()
+		)
+		_list_container.add_child(done_toggle)
+
+		if not _done_collapsed:
+			for entry in done_items:
+				_list_container.add_child(_build_item_row(entry["idx"], entry["item"]))
 
 
 func _build_item_row(i: int, item: Dictionary) -> HBoxContainer:
