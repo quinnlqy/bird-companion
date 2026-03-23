@@ -8,8 +8,12 @@ extends Node2D
 @onready var skeleton: Skeleton2D = $Skeleton2D
 
 var _debug_label: Label
-var _todo_panel: Control    # Todo 面板（CanvasLayer 内，主窗口中）
-var _todo_btn:   Button
+var _todo_panel:     Window
+var _todo_btn:       Button
+var _calendar_panel: Window
+var _calendar_btn:   Button
+var _todo_positioned     := false
+var _calendar_positioned := false
 
 # ── 中转服务器配置 ────────────────────────────────────────
 const WS_URL := "ws://106.53.29.28:18789"
@@ -97,8 +101,9 @@ func _setup_fullscreen_window() -> void:
 
 # ── Todo 初始化 ─────────────────────────────────────────
 func _init_todo() -> void:
-	# CanvasLayer 覆盖整个全屏窗口，用于放置 UI 控件
+	# ── CanvasLayer 只用于放置切换按钮（靠近鸟鸟）──────────
 	var canvas := CanvasLayer.new()
+	canvas.layer = 10
 	add_child(canvas)
 
 	var anchor := Control.new()
@@ -106,7 +111,7 @@ func _init_todo() -> void:
 	anchor.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	canvas.add_child(anchor)
 
-	# ── 切换按钮（靠近鸟鸟）──────────────────────────────
+	# ── 切换按钮 ─────────────────────────────────────────
 	_todo_btn = Button.new()
 	_todo_btn.text = "📝 Todo"
 	_todo_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
@@ -115,45 +120,48 @@ func _init_todo() -> void:
 	_todo_btn.pressed.connect(_on_todo_btn_pressed)
 	anchor.add_child(_todo_btn)
 
-	# ── Todo 面板（在主全屏窗口内，无需子 Window）────────
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.12, 0.12, 0.15, 0.97)
-	style.corner_radius_top_left    = 8
-	style.corner_radius_top_right   = 8
-	style.corner_radius_bottom_left = 8
-	style.corner_radius_bottom_right = 8
+	_calendar_btn = Button.new()
+	_calendar_btn.text = "📅 日历"
+	_calendar_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_calendar_btn.flat = true
+	_calendar_btn.modulate = Color(1, 1, 1, 0.75)
+	_calendar_btn.pressed.connect(_on_calendar_btn_pressed)
+	anchor.add_child(_calendar_btn)
 
-	var todo_panel := PanelContainer.new()
-	todo_panel.add_theme_stylebox_override("panel", style)
-	todo_panel.set_script(load("res://todo_window.gd"))
-	todo_panel.visible = false
-	todo_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	anchor.add_child(todo_panel)
-	_todo_panel = todo_panel
-	# 面板通过 ✕ 隐藏时，自动更新穿透区域
-	_todo_panel.visibility_changed.connect(_update_mouse_region)
+	# ── Todo 独立 Window ──────────────────────────────────
+	var todo_win := Window.new()
+	todo_win.set_script(load("res://todo_window.gd"))
+	todo_win.visible = false
+	add_child(todo_win)
+	_todo_panel = todo_win
+	_todo_panel.request_ws_send.connect(_on_todo_ws_send)
+	_todo_panel.close_requested.connect(func(): _todo_panel.hide())
+
+	# ── Calendar 独立 Window ──────────────────────────────
+	var cal_win := Window.new()
+	cal_win.set_script(load("res://calendar_window.gd"))
+	cal_win.visible = false
+	add_child(cal_win)
+	_calendar_panel = cal_win
+	_calendar_panel.request_ws_send.connect(_on_todo_ws_send)
+	_calendar_panel.close_requested.connect(func(): _calendar_panel.hide())
 
 	_update_mouse_region()
 	_reposition_todo_ui()
 
 
 func _update_mouse_region() -> void:
-	var ws: Vector2i = get_window().size
-	var pos: Vector2 = global_position
-	var wsxf: float = float(ws.x)
-	var wsyf: float = float(ws.y)
-	var rx0: float = pos.x - 650.0
-	var ry0: float = pos.y - 350.0
-	var rx1: float = pos.x + 650.0
-	var ry1: float = pos.y + 350.0
-	if rx0 < 0.0: rx0 = 0.0
-	if ry0 < 0.0: ry0 = 0.0
-	if rx1 > wsxf: rx1 = wsxf
-	if ry1 > wsyf: ry1 = wsyf
-	DisplayServer.window_set_mouse_passthrough(PackedVector2Array([
-		Vector2(rx0, ry0), Vector2(rx1, ry0),
-		Vector2(rx1, ry1), Vector2(rx0, ry1)
-	]))
+	# 独立 Window 节点各自管理自身的输入，主窗口只需覆盖鸟鸟本体 + 按钮区
+	var bird_rect := Rect2(global_position + Vector2(-80, -150), Vector2(160, 200))
+	var btn_rect  := Rect2(global_position + Vector2(-90, 120), Vector2(200, 40))
+	var area := bird_rect.merge(btn_rect)
+	var pts := PackedVector2Array([
+		area.position,
+		Vector2(area.end.x, area.position.y),
+		area.end,
+		Vector2(area.position.x, area.end.y)
+	])
+	DisplayServer.window_set_mouse_passthrough(pts)
 
 
 
@@ -164,28 +172,39 @@ func _reposition_todo_ui() -> void:
 	if not is_instance_valid(_todo_btn):
 		return
 	var pos := global_position
-	# 按钮：鸟鸟正下方约 130px
-	_todo_btn.position = pos + Vector2(-35, 130)
-
-	if is_instance_valid(_todo_panel) and _todo_panel.visible:
-		var screen_sz := DisplayServer.screen_get_size()
-		# 起首用 size，未计算时用 custom_minimum_size
-		var pw := _todo_panel.size.x if _todo_panel.size.x > 10 else _todo_panel.custom_minimum_size.x
-		var ph := _todo_panel.size.y if _todo_panel.size.y > 10 else _todo_panel.custom_minimum_size.y
-		# 优先放右边，放不下则左边
-		if pos.x + 80 + pw + 10 <= screen_sz.x:
-			_todo_panel.position = Vector2(pos.x + 80 + 10, pos.y - 160)
-		else:
-			_todo_panel.position = Vector2(pos.x - 140 - pw - 10, pos.y - 160)
+	# 只有按钮跟着鸟鸟移动，面板位置完全独立
+	_todo_btn.position     = pos + Vector2(-70, 130)
+	if is_instance_valid(_calendar_btn):
+		_calendar_btn.position = pos + Vector2(10, 130)
 
 
 
 func _on_todo_btn_pressed() -> void:
 	if not is_instance_valid(_todo_panel):
 		return
-	_todo_panel.visible = not _todo_panel.visible
-	_reposition_todo_ui()
-	_update_mouse_region()
+	if _todo_panel.visible:
+		_todo_panel.hide()
+	else:
+		if not _todo_positioned:
+			_todo_positioned = true
+			var win := get_window()
+			var bird_screen_pos := win.position + Vector2i(global_position)
+			_todo_panel.position = bird_screen_pos + Vector2i(-320, -200)
+		_todo_panel.show()
+
+
+func _on_calendar_btn_pressed() -> void:
+	if not is_instance_valid(_calendar_panel):
+		return
+	if _calendar_panel.visible:
+		_calendar_panel.hide()
+	else:
+		if not _calendar_positioned:
+			_calendar_positioned = true
+			var win := get_window()
+			var bird_screen_pos := win.position + Vector2i(global_position)
+			_calendar_panel.position = bird_screen_pos + Vector2i(-320, -300)
+		_calendar_panel.show()
 
 
 
@@ -241,7 +260,9 @@ func _process(delta: float) -> void:
 			print("[Pet] 久坐提醒（本地计时）")
 			_trigger_side_animation()
 
-	# ── 调试倒计时显示 ────────────────────────────────────
+	# ── 每帧更新鼠标穿透区域（鸟鸟可能被拖动）────────────
+	if _is_dragging:
+		_update_mouse_region()
 	var sleep_left: float = max(0.0, SLEEP_INTERVAL - _idle_timer)
 	var sit_left: float   = max(0.0, SEDENTARY_INTERVAL - _sedentary_timer)
 	_debug_label.text = "💤 入睡: %dm%02ds\n🪑 久坐: %dm%02ds\n状态: %s" % [
@@ -249,6 +270,38 @@ func _process(delta: float) -> void:
 		int(sit_left)   / 60, int(sit_left)   % 60,
 		State.keys()[_state]
 	]
+
+
+# ── 代 Todo 面板发送 WS 消息 ──────────────────────────────
+func _on_todo_ws_send(method: String, params: Dictionary) -> void:
+	if _ws.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		print("[WS] 未连接，无法发送 Todo 同步请求")
+		return
+	var req := {
+		"type": "req",
+		"id": "todo-sync-%d" % Time.get_unix_time_from_system(),
+		"method": method,
+		"params": params
+	}
+	_ws.send_text(JSON.stringify(req))
+	print("[WS] 发送 Todo 请求 method=", method)
+
+
+# ── 拉取最后一条 chat 历史（同步完成后取 AI 回复）─────────
+func _fetch_chat_history() -> void:
+	if _ws.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return
+	var req := {
+		"type": "req",
+		"id": "todo-history",
+		"method": "chat.history",
+		"params": {
+			"sessionKey": "agent:main:main",
+			"limit": 1
+		}
+	}
+	_ws.send_text(JSON.stringify(req))
+	print("[WS] 拉取 chat.history")
 
 
 # ── WebSocket 连接 ────────────────────────────────────────
@@ -294,6 +347,57 @@ func _on_ws_message(raw: String) -> void:
 
 	# ── 收到认证响应 ──────────────────────────────────────
 	if msg_type == "res":
+		var res_id: String = msg.get("id", "")
+		# chat.history 响应 → 取最后一条 AI 回复（必须在 todo- 前检查）
+		if res_id == "todo-history":
+			if msg.get("ok", false):
+				var messages: Array = msg.get("payload", {}).get("messages", [])
+				print("[WS] chat.history 收到 %d 条" % messages.size())
+				for i in range(messages.size() - 1, -1, -1):
+					var m = messages[i]
+					var role: String = m.get("role", "")
+					if role == "assistant":
+						var raw_content = m.get("content", "")
+						var content: String = ""
+						if raw_content is String:
+							content = raw_content
+						elif raw_content is Array:
+							# content blocks 格式：[{"type":"text","text":"..."}]
+							for block in raw_content:
+								if block.get("type", "") == "text":
+									content += block.get("text", "")
+						print("[WS] AI 回复内容: ", content.substr(0, 200))
+						if is_instance_valid(_todo_panel):
+							_todo_panel.on_chat_response(content)
+						if is_instance_valid(_calendar_panel):
+							_calendar_panel.on_chat_response(content)
+						break
+				await get_tree().create_timer(3.0).timeout
+				_set_state(State.IDLE)
+			else:
+				print("[WS] chat.history 失败：", msg.get("error", {}))
+				if is_instance_valid(_todo_panel):
+					_todo_panel._set_sync_status("❌ 拉取历史失败")
+					_todo_panel._waiting_for_sync_response = false
+				await get_tree().create_timer(3.0).timeout
+				_set_state(State.IDLE)
+			return
+		# todo 同步的其他响应
+		if res_id.begins_with("todo-"):
+			if not msg.get("ok", false):
+				print("[Todo] 请求失败：", msg.get("error", {}))
+				if is_instance_valid(_todo_panel):
+					_todo_panel._set_sync_status("❌ 请求失败")
+					_todo_panel._waiting_for_sync_response = false
+			return
+		# calendar 同步响应
+		if res_id.begins_with("calendar-"):
+			if not msg.get("ok", false):
+				print("[Calendar] 请求失败：", msg.get("error", {}))
+				if is_instance_valid(_calendar_panel):
+					_calendar_panel._set_sync_status("❌ 请求失败")
+					_calendar_panel._waiting_for_sync_response = false
+			return
 		if msg.get("ok", false):
 			print("[WS] 认证成功！")
 			_reconnect_delay = 5.0
@@ -316,9 +420,11 @@ func _on_ws_message(raw: String) -> void:
 		_idle_timer = 0.0  # 任何事件都重置休眠计时
 
 		if evt == "agent":
-			match payload.get("stream", ""):
+			var stream: String = payload.get("stream", "")
+			match stream:
 				"lifecycle":
 					var phase = payload.get("data", {}).get("phase", "")
+					var run_id: String = payload.get("runId", "")
 					match phase:
 						"start":
 							print("[Pet] AI 开始工作 → working")
@@ -327,8 +433,15 @@ func _on_ws_message(raw: String) -> void:
 						"end":
 							print("[Pet] AI 完成工作 → done")
 							_set_state(State.DONE)
-							await get_tree().create_timer(3.0).timeout
-							_set_state(State.IDLE)
+							# 如果是 todo 或 calendar 同步触发的 run，拉取回复内容
+							var is_sync_run: bool = run_id.begins_with("todo-sync-") or run_id.begins_with("calendar-sync-")
+							var panel_waiting: bool = (is_instance_valid(_todo_panel) and _todo_panel._waiting_for_sync_response) \
+								or (is_instance_valid(_calendar_panel) and _calendar_panel._waiting_for_sync_response)
+							if is_sync_run and panel_waiting:
+								_fetch_chat_history()
+							else:
+								await get_tree().create_timer(3.0).timeout
+								_set_state(State.IDLE)
 				"sedentary":
 					print("[Pet] 久坐提醒")
 					_sedentary_timer = 0.0
@@ -339,6 +452,15 @@ func _on_ws_message(raw: String) -> void:
 				"wake":
 					print("[Pet] 收到唤醒指令")
 					_wake_up()
+
+		# ── chat 响应转发给 todo 面板 ─────────────────────
+		elif evt == "chat":
+			print("[WS CHAT RAW] ", msg)
+			var text: String = payload.get("data", {}).get("text", "")
+			if text.is_empty():
+				text = payload.get("data", {}).get("delta", "")
+			if not text.is_empty() and is_instance_valid(_todo_panel):
+				_todo_panel.on_chat_response(text)
 
 
 # ── 切换宠物状态 ──────────────────────────────────────────

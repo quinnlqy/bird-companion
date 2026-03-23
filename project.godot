@@ -21,6 +21,7 @@ window/size/viewport_width=256
 window/size/viewport_height=512
 window/size/transparent=true
 window/per_pixel_transparency/allowed=true
+window/stretch/mode="disabled"
 
 [physics]
 
