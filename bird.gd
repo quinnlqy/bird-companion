@@ -53,6 +53,7 @@ var _last_mouse_pos := Vector2i.ZERO
 func _ready() -> void:
 	anim_tree.active = true
 	get_window().borderless = true
+	get_window().gui_embed_subwindows = false
 	_next_tilt = randf_range(5.0, 15.0)
 
 	# ── 全屏透明窗口（Bongocat 模式）──────────────────────
