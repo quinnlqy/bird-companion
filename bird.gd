@@ -266,10 +266,13 @@ func _process(delta: float) -> void:
 		_update_mouse_region()
 	var sleep_left: float = max(0.0, SLEEP_INTERVAL - _idle_timer)
 	var sit_left: float   = max(0.0, SEDENTARY_INTERVAL - _sedentary_timer)
-	_debug_label.text = "💤 入睡: %dm%02ds\n🪑 久坐: %dm%02ds\n状态: %s" % [
+	_debug_label.text = "💤 入睡: %dm%02ds\n🪑 久坐: %dm%02ds\n状态: %s\nbird.pos=%s\nlbl.pos=%s\nlbl.gpos=%s" % [
 		int(sleep_left) / 60, int(sleep_left) % 60,
 		int(sit_left)   / 60, int(sit_left)   % 60,
-		State.keys()[_state]
+		State.keys()[_state],
+		str(position),
+		str(status_label.position),
+		str(status_label.global_position)
 	]
 	_clamp_status_label()
 
@@ -495,27 +498,20 @@ func _update_status() -> void:
 
 # ── 防止 StatusLabel 超出视口边缘 ──────────────────────────
 func _clamp_status_label() -> void:
-	# position 是 Node2D 在视口内的像素坐标，直接用来做边界计算
-	var vp_sz:  Vector2 = get_viewport_rect().size
-	var lbl_w:  float   = 240.0   # offset_right(120) - offset_left(-120)
-	var def_x:  float   = -120.0  # 默认相对鸟的 x 偏移（头顶居中）
-	var def_y:  float   = -160.0  # 默认相对鸟的 y 偏移（头顶上方）
+	var vp: Vector2 = get_viewport_rect().size
+	const W: float = 240.0  # label 宽度
+	const MARGIN: float = 4.0
 
-	# 标签左上角在视口中的实际坐标
-	var sx: float = position.x + def_x
-	var sy: float = position.y + def_y
+	# label 在视口中的 y = bird.position.y + label_local_y
+	# 要保证 label 顶部 >= MARGIN，即 label_local_y >= MARGIN - position.y
+	var min_ly: float = MARGIN - position.y
+	var ly: float = max(-160.0, min_ly)
 
-	var fx: float = def_x
-	var fy: float = def_y
+	# label 在视口中的 x = bird.position.x + label_local_x
+	# 宽 240，默认居中在鸟身上：label_local_x = -120
+	var lx: float = clamp(-120.0, MARGIN - position.x, vp.x - MARGIN - W - position.x)
 
-	if sy < 2.0:                        # 超出顶部
-		fy = def_y + (2.0 - sy)
-	if sx < 2.0:                        # 超出左侧
-		fx = def_x + (2.0 - sx)
-	elif sx + lbl_w > vp_sz.x - 2.0:  # 超出右侧
-		fx = def_x + (vp_sz.x - 2.0 - lbl_w - sx)
-
-	status_label.position = Vector2(fx, fy)
+	status_label.position = Vector2(lx, ly)
 
 
 # ── 唤醒 ─────────────────────────────────────────────────
