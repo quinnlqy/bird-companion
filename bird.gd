@@ -493,27 +493,27 @@ func _update_status() -> void:
 		status_label.text = "⏳ 连接中..."
 
 
-# ── 防止 StatusLabel 超出视口上边缘 ──────────────────────────
+# ── 防止 StatusLabel 超出视口边缘 ──────────────────────────
 func _clamp_status_label() -> void:
-	var vp_size  := get_viewport_rect().size
-	# 标签相对鸟的默认本地坐标（与 tscn offset_left/top 一致）
-	var base_x  : float = -120.0
-	var base_y  : float = -160.0
-	var lbl_w   : float = 240.0   # offset_right(120) - offset_left(-120)
+	# position 是 Node2D 在视口内的像素坐标，直接用来做边界计算
+	var vp_sz:  Vector2 = get_viewport_rect().size
+	var lbl_w:  float   = 240.0   # offset_right(120) - offset_left(-120)
+	var def_x:  float   = -120.0  # 默认相对鸟的 x 偏移（头顶居中）
+	var def_y:  float   = -160.0  # 默认相对鸟的 y 偏移（头顶上方）
 
-	# 标签在视口中的实际左上角坐标
-	var screen_x: float = position.x + base_x
-	var screen_y: float = position.y + base_y
+	# 标签左上角在视口中的实际坐标
+	var sx: float = position.x + def_x
+	var sy: float = position.y + def_y
 
-	var fx: float = base_x
-	var fy: float = base_y
+	var fx: float = def_x
+	var fy: float = def_y
 
-	if screen_y < 0.0:
-		fy = base_y - screen_y          # 超出顶部 → 下移
-	if screen_x < 0.0:
-		fx = base_x - screen_x          # 超出左边 → 右移
-	elif screen_x + lbl_w > vp_size.x:
-		fx = base_x + (vp_size.x - (screen_x + lbl_w))  # 超出右边 → 左移
+	if sy < 2.0:                        # 超出顶部
+		fy = def_y + (2.0 - sy)
+	if sx < 2.0:                        # 超出左侧
+		fx = def_x + (2.0 - sx)
+	elif sx + lbl_w > vp_sz.x - 2.0:  # 超出右侧
+		fx = def_x + (vp_sz.x - 2.0 - lbl_w - sx)
 
 	status_label.position = Vector2(fx, fy)
 
