@@ -135,7 +135,7 @@ func _init_todo() -> void:
 	add_child(todo_win)
 	_todo_panel = todo_win
 	_todo_panel.request_ws_send.connect(_on_todo_ws_send)
-	_todo_panel.close_requested.connect(func(): _todo_panel.hide())
+	_todo_panel.close_requested.connect(_todo_panel.hide)
 
 	# ── Calendar 独立 Window ──────────────────────────────
 	var cal_win := Window.new()
@@ -144,7 +144,7 @@ func _init_todo() -> void:
 	add_child(cal_win)
 	_calendar_panel = cal_win
 	_calendar_panel.request_ws_send.connect(_on_todo_ws_send)
-	_calendar_panel.close_requested.connect(func(): _calendar_panel.hide())
+	_calendar_panel.close_requested.connect(_calendar_panel.hide)
 
 	_update_mouse_region()
 	_reposition_todo_ui()
@@ -187,8 +187,8 @@ func _on_todo_btn_pressed() -> void:
 	else:
 		if not _todo_positioned:
 			_todo_positioned = true
-			var win := get_window()
-			var bird_screen_pos := win.position + Vector2i(global_position)
+			var gp := Vector2i(int(global_position.x), int(global_position.y))
+			var bird_screen_pos := get_window().position + gp
 			_todo_panel.position = bird_screen_pos + Vector2i(-320, -200)
 		_todo_panel.show()
 
@@ -201,8 +201,8 @@ func _on_calendar_btn_pressed() -> void:
 	else:
 		if not _calendar_positioned:
 			_calendar_positioned = true
-			var win := get_window()
-			var bird_screen_pos := win.position + Vector2i(global_position)
+			var gp := Vector2i(int(global_position.x), int(global_position.y))
+			var bird_screen_pos := get_window().position + gp
 			_calendar_panel.position = bird_screen_pos + Vector2i(-320, -300)
 		_calendar_panel.show()
 
@@ -435,8 +435,9 @@ func _on_ws_message(raw: String) -> void:
 							_set_state(State.DONE)
 							# 如果是 todo 或 calendar 同步触发的 run，拉取回复内容
 							var is_sync_run: bool = run_id.begins_with("todo-sync-") or run_id.begins_with("calendar-sync-")
-							var panel_waiting: bool = (is_instance_valid(_todo_panel) and _todo_panel._waiting_for_sync_response) \
-								or (is_instance_valid(_calendar_panel) and _calendar_panel._waiting_for_sync_response)
+							var todo_waiting: bool = is_instance_valid(_todo_panel) and _todo_panel._waiting_for_sync_response
+							var cal_waiting: bool = is_instance_valid(_calendar_panel) and _calendar_panel._waiting_for_sync_response
+							var panel_waiting: bool = todo_waiting or cal_waiting
 							if is_sync_run and panel_waiting:
 								_fetch_chat_history()
 							else:
