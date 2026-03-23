@@ -152,9 +152,9 @@ func _init_todo() -> void:
 
 
 func _update_mouse_region() -> void:
-	# 独立 Window 节点各自管理自身的输入，主窗口只需覆盖鸟鸟本体 + 按钮区
-	var bird_rect := Rect2(global_position + Vector2(-80, -150), Vector2(160, 200))
-	var btn_rect  := Rect2(global_position + Vector2(-90, 120), Vector2(200, 40))
+	# 覆盖鸟本体 + 头顶标签（offset_left=-120, offset_top=-160）+ 按钮区
+	var bird_rect := Rect2(global_position + Vector2(-125, -165), Vector2(250, 335))
+	var btn_rect  := Rect2(global_position + Vector2(-90,  120),  Vector2(200, 40))
 	var area := bird_rect.merge(btn_rect)
 	var pts := PackedVector2Array([
 		area.position,
@@ -266,15 +266,11 @@ func _process(delta: float) -> void:
 		_update_mouse_region()
 	var sleep_left: float = max(0.0, SLEEP_INTERVAL - _idle_timer)
 	var sit_left: float   = max(0.0, SEDENTARY_INTERVAL - _sedentary_timer)
-	_debug_label.text = "💤 入睡: %dm%02ds\n🪑 久坐: %dm%02ds\n状态: %s\nbird.pos=%s\nlbl.pos=%s\nlbl.gpos=%s" % [
+	_debug_label.text = "💤 入睡: %dm%02ds\n🪑 久坐: %dm%02ds\n状态: %s" % [
 		int(sleep_left) / 60, int(sleep_left) % 60,
 		int(sit_left)   / 60, int(sit_left)   % 60,
-		State.keys()[_state],
-		str(position),
-		str(status_label.position),
-		str(status_label.global_position)
+		State.keys()[_state]
 	]
-	_clamp_status_label()
 
 
 # ── 代 Todo 面板发送 WS 消息 ──────────────────────────────
@@ -495,29 +491,6 @@ func _update_status() -> void:
 	else:
 		status_label.text = "⏳ 连接中..."
 
-
-# ── 防止 StatusLabel 超出视口边缘 ──────────────────────────
-func _clamp_status_label() -> void:
-	var vp: Vector2 = get_viewport_rect().size
-	const W: float = 240.0
-	const MARGIN: float = 4.0
-
-	# 期望的标签顶部 y（视口坐标）= 鸟的 y + (-160)，但不能小于 MARGIN
-	var desired_ly: float = -160.0
-	var screen_top: float = position.y + desired_ly
-	if screen_top < MARGIN:
-		desired_ly = desired_ly + (MARGIN - screen_top)
-
-	# 期望的标签左侧 x（视口坐标）= 鸟的 x + (-120)，约束在 [MARGIN, vp.x-MARGIN-W]
-	var desired_lx: float = -120.0
-	var screen_left: float = position.x + desired_lx
-	if screen_left < MARGIN:
-		desired_lx = desired_lx + (MARGIN - screen_left)
-	elif screen_left + W > vp.x - MARGIN:
-		desired_lx = desired_lx + (vp.x - MARGIN - W - screen_left)
-
-	# 每帧都写，确保退出边缘后能恢复默认位置
-	status_label.position = Vector2(desired_lx, desired_ly)
 
 
 # ── 唤醒 ─────────────────────────────────────────────────
