@@ -224,8 +224,10 @@ func _render_month() -> void:
 			var evt_bg := PanelContainer.new()
 			var s := StyleBoxFlat.new()
 			s.bg_color = Color(color.r, color.g, color.b, 0.25)
-			s.corner_radius_top_left = s.corner_radius_top_right = 3
-			s.corner_radius_bottom_left = s.corner_radius_bottom_right = 3
+			s.corner_radius_top_left = 3
+			s.corner_radius_top_right = 3
+			s.corner_radius_bottom_left = 3
+			s.corner_radius_bottom_right = 3
 			evt_bg.add_theme_stylebox_override("panel", s)
 			evt_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			cell.add_child(evt_bg)
